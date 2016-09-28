@@ -6,6 +6,7 @@ import numpy
 import os
 import sqlite3
 import cProfile
+import sys
 
 uniqueRunNum = strftime("%Y%m%d_%H%M%S")
 historyDb = r'C:\GisWork\sgidchanges\sgidPolyHash.db'
@@ -283,26 +284,45 @@ def updateData(src, dest, historyTable, fields):
     hashLookup, geoHashLookup = getHashLookups(dest)
     fields.remove('OID@')
     if not is_table:
+        fields.append('OID@')
         fields.append('SHAPE@')
-    with arcpy.da.SearchCursor(src, fields) as srcCursor:
-        rowList = sorted(cursor, key=itemgetter(len(fields) - 1))
+    sql_clause = (None, 'ORDER BY OBJECTID')
+    orderNum = 0
+    with arcpy.da.SearchCursor(src, fields, sql_clause=sql_clause) as srcCursor:
         for row in srcCursor:
+            orderNum += 1
             # Shape hash
             wkt = row[-1].WKT
             geoHexDigest = getGeoHash(wkt)
             # Attribute hash
             hasher = hashlib.md5()
-            hasher.update(str(row[:-1]))
+            hs = str(row[:-2]) + str(orderNum)
+            hasher.update(hs)
+            # hasher.update(orderNum)
             attHexDigest = hasher.hexdigest()
             # Check for new feature
-            if geoHexDigest not in geoHashLookup or attHexDigest not in hashLookup:
-                return
+            if attHexDigest not in hashLookup:
+                listRow = list(row)
+                listRow.extend([geoHexDigest, attHexDigest])
+                newRows.append(listRow)
+            elif geoHexDigest not in geoHashLookup:
                 listRow = list(row)
                 listRow.extend([geoHexDigest, attHexDigest])
                 newRows.append(listRow)
             else:
                 hashLookup[attHexDigest] = 1
                 geoHashLookup[geoHexDigest] = 1
+
+    oldGeoHashes = [h for h in geoHashLookup if geoHashLookup[h] == 0]
+    oldHashes = [h for h in hashLookup if hashLookup[h] == 0]
+    if len(oldGeoHashes) > 0 or len(oldHashes) > 0:
+        whereSelection = """{} IN ('{}')""".format(attHashColumn,
+                                                   "','".join(oldHashes))
+        # print whereSelection
+        print 'remove'
+        with arcpy.da.UpdateCursor(dest, [attHashColumn], whereSelection) as uCursor:
+            for row in uCursor:
+                uCursor.deleteRow()
 
     if len(newRows) > 0:
         fields.extend([geoHashColumn, attHashColumn])
@@ -311,21 +331,6 @@ def updateData(src, dest, historyTable, fields):
             for row in newRows:
                 iCursor.insertRow(row)
 
-    oldGeoHashes = [h for h in geoHashLookup if geoHashLookup[h] == 0]
-    oldHashes = [h for h in hashLookup if hashLookup[h] == 0]
-    if len(oldGeoHashes) > 0 or len(oldHashes) > 0:
-        whereSelection = """{} IN ('{}') OR
-                            {} IN ('{}')""".format(attHashColumn,
-                                                   "','".join(oldHashes),
-                                                   geoHashColumn,
-                                                   "','".join(oldGeoHashes))
-        print whereSelection
-        print 'remove'
-        with arcpy.da.UpdateCursor(dest, [attHashColumn], whereSelection) as uCursor:
-            for row in uCursor:
-                uCursor.deleteRow()
-    oldHashes = []
-    oldGeoHashes = []
     print '\nOld attribute hashes {}'.format(len(oldHashes))
     print 'Old geometry hashes   {}'.format(len(oldGeoHashes))
     print 'New rows              {}\n'.format(len(newRows))
@@ -368,9 +373,10 @@ if __name__ == '__main__':
     fields = _filter_fields(fields)
     fields.sort()
 
+    #updateData(src, dest, historyTable, fields)
+
     pr = cProfile.Profile()
     pr.enable()
     updateData(src, dest, historyTable, fields)
-    # getNewAndOutdatedWkb(src, historyTable)
     pr.create_stats()
     pr.print_stats('cumulative')
