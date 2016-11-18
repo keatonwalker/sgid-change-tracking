@@ -270,12 +270,13 @@ def getHashLookups(dest):
     return (hashLookup, geoHashLookup)
 
 
-def getGeoHash(wkt):
+def getGeoHash(wkt, orderNum):
     hasher = hashlib.md5(wkt)
+    hasher.update(str(orderNum))
     return hasher.hexdigest()
 
 
-def updateData(src, dest, historyTable, fields):
+def updateData(src, dest, fields):
     """Get features that are new to hash lookup and features no longer needed."""
     is_table = False
     attHashColumn = 'attHash'
@@ -284,7 +285,7 @@ def updateData(src, dest, historyTable, fields):
     hashLookup, geoHashLookup = getHashLookups(dest)
     fields.remove('OID@')
     if not is_table:
-        fields.append('OID@')
+        #fields.append('OID@')
         fields.append('SHAPE@')
     sql_clause = (None, 'ORDER BY OBJECTID')
     orderNum = 0
@@ -293,7 +294,7 @@ def updateData(src, dest, historyTable, fields):
             orderNum += 1
             # Shape hash
             wkt = row[-1].WKT
-            geoHexDigest = getGeoHash(wkt)
+            geoHexDigest = getGeoHash(wkt, orderNum)
             # Attribute hash
             hasher = hashlib.md5()
             hs = str(row[:-2]) + str(orderNum)
@@ -364,19 +365,16 @@ class Crate(object):
         self.source = src
 
 if __name__ == '__main__':
-    src = r'C:\GisWork\sgidchanges\TestFeatures.gdb\SrcRailroads'
-    dest = r'C:\GisWork\sgidchanges\TestFeatures.gdb\RailRoads'
+    src = r'C:\GisWork\sgidchanges\TestFeatures.gdb\SrcTrails'
+    dest = r'C:\GisWork\sgidchanges\TestFeatures.gdb\Trails'
     crate = Crate(src,
                   dest)
-    historyTable = 'railshistory'
     fields = fields = set([fld.name for fld in arcpy.ListFields(crate.destination)]) & set([fld.name for fld in arcpy.ListFields(crate.source)])
     fields = _filter_fields(fields)
     fields.sort()
 
-    #updateData(src, dest, historyTable, fields)
-
     pr = cProfile.Profile()
     pr.enable()
-    updateData(src, dest, historyTable, fields)
+    updateData(src, dest, fields)
     pr.create_stats()
     pr.print_stats('cumulative')
