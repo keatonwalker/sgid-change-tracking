@@ -149,21 +149,53 @@ def srcToNumpy(src, fields):
     print oids.shape
 
 
-def srcCursorThrough(src, fields):
+def srcCursorThrough(src):
     l = []
+    fields = _filter_fields([fld.name for fld in arcpy.ListFields(src)])
+    fields.sort()
 
     with arcpy.da.SearchCursor(src, fields) as srcCursor:
-        # l = list(srcCursor)
         for row in srcCursor:
             hasher = hashlib.md5()
             hasher.update(str(row))
-        # histCursor.execute('''SELECT COUNT(*) FROM {} WHERE {} = "{}"'''.format(
-        #                     historyTable,
-        #                     geoHashColumn,
-        #                     geoHexDigest))
-        # if histCursor.fetchone()[0] < 1:
-        #     newHashes.append((geoHexDigest, oid, uniqueRunNum))
+            l.append(hasher.hexdigest())
     print len(l)
+
+
+def srcCursorThroughGeometry(src):
+    l = []
+    fields = ['SHAPE@']
+    with arcpy.da.SearchCursor(src, fields) as srcCursor:
+        # l = list(srcCursor)
+        for row in srcCursor:
+            if row[0] is not None:
+                wkt = row[0].WKT
+                hasher = hashlib.md5(wkt)
+                l.append(hasher.hexdigest())
+    print len(l)
+
+
+def srcCursorThroughBoth(src):
+    attributeHashes = []
+    geometryHashes = []
+    fields = _filter_fields([fld.name for fld in arcpy.ListFields(src)])
+    fields.sort()
+    fields.append('SHAPE@')
+    i = 0
+    with arcpy.da.SearchCursor(src, fields) as srcCursor:
+        for row in srcCursor:
+            i += 1
+            attHash = hashlib.md5(str(row[:-1])).hexdigest()
+            #attributeHashes[attHash] = i
+            #attributeHashes.append(attHash)
+            # shape = row[-1]
+            # if row[-1] is not None:
+            #     wkt = row[-1].WKT
+            #     geoHash = hashlib.md5(wkt).hexdigest()
+                #geometryHashes[geoHash] = i
+                #geometryHashes.append(geoHash)
+    print 'Attribute Hashes: {}'.format(len(attributeHashes))
+    print 'Geometry Hashes: {}'.format(len(geometryHashes))
 
 
 def getAttributeHashLookup(historyTable):
@@ -285,7 +317,7 @@ def updateData(src, dest, fields):
     hashLookup, geoHashLookup = getHashLookups(dest)
     fields.remove('OID@')
     if not is_table:
-        #fields.append('OID@')
+        fields.append('OID@')
         fields.append('SHAPE@')
     sql_clause = (None, 'ORDER BY OBJECTID')
     orderNum = 0
@@ -365,16 +397,24 @@ class Crate(object):
         self.source = src
 
 if __name__ == '__main__':
-    src = r'C:\GisWork\sgidchanges\TestFeatures.gdb\SrcTrails'
+    src = r'Database Connections\Connection to sgid.agrc.utah.gov.sde\SGID10.LOCATION.AddressPoints'
     dest = r'C:\GisWork\sgidchanges\TestFeatures.gdb\Trails'
     crate = Crate(src,
                   dest)
-    fields = fields = set([fld.name for fld in arcpy.ListFields(crate.destination)]) & set([fld.name for fld in arcpy.ListFields(crate.source)])
-    fields = _filter_fields(fields)
+    #fields = fields = set([fld.name for fld in arcpy.ListFields(crate.destination)]) & set([fld.name for fld in arcpy.ListFields(crate.source)])
+    fields = _filter_fields([fld.name for fld in arcpy.ListFields(src)])  # fields)
     fields.sort()
-
+    fields.append('SHAPE@')
+    # fields = ['SHAPE@']
+    print 'Fields #{},\n{}'.format(len(fields), str(fields))
     pr = cProfile.Profile()
     pr.enable()
-    updateData(src, dest, fields)
+    srcCursorThroughBoth(src)
     pr.create_stats()
     pr.print_stats('cumulative')
+
+    # pr = cProfile.Profile()
+    # pr.enable()
+    # updateData(src, dest, fields)
+    # pr.create_stats()
+    # pr.print_stats('cumulative')
