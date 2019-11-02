@@ -22,6 +22,20 @@ alter identical
 
 """
 
+# class validator(object):
+#     """Validate various changes in various ways"""
+#     def __init__(self):
+#         """ctor"""
+#         self.applicable_fields = []
+
+validators = {
+    'TextField': lambda new_hash, old_hash: new_hash is not old_hash,
+    'ShortField': lambda value: value - 1 if value else -1,
+    'LongField': lambda value: value + 1 if value else 1,
+    'FloatField': lambda value: value - 0.5 if value else -0.5,
+    'DoubleField': lambda value: value + 0.5 if value else 0.5,
+    'DateField': lambda value: value + datetime.timedelta(seconds=1) if value else datetime.now()}
+
 
 def get_exp_shape_where_clause(sample_number, shape_len_mean):
     samples = []
